@@ -30,7 +30,7 @@ lua/swigluarun.h
 .vscode/settings.json
 
 # Doxygen
-docs/*
+# docs/* — removed to allow tracking plans and agent docs
 
 # Created by https://www.toptal.com/developers/gitignore/api/cmake
 # Edit at https://www.toptal.com/developers/gitignore?templates=cmake
