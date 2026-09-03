@@ -71,3 +71,10 @@ test_results/
 
 # Test environment (user-specific)
 tests/.test.env
+
+# Python virtual environments
+.venv
+venv/
+*.egg-info/
+__pycache__/
+*.pyc
