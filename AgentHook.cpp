@@ -113,6 +113,11 @@ HOOK_METHOD(CommandGui, OnLoop, () -> void)
 {
     LOG_HOOK("HOOK_METHOD -> CommandGui::OnLoop -> Begin (AgentHook.cpp)\n")
 
+    // Enable auto-fire whenever combat is active
+    if (this->combatControl.open && !this->combatControl.weapControl.autoFiring) {
+        this->combatControl.weapControl.SetAutoFire(true);
+    }
+
     // Send event to agent when a new choice box appears
     if (this->choiceBox.bOpen && !this->choiceBox.choices.empty()) {
         if (!waitingForAction && this->choiceBox.mainText != lastEventText) {
