@@ -85,6 +85,20 @@ static std::string SerializeEvent(const ChoiceBox &box)
     return json;
 }
 
+// Returns -1 on parse failure.
+static int ParseChoiceIndex(const std::string &json)
+{
+    auto pos = json.find("\"index\"");
+    if (pos == std::string::npos) return -1;
+    pos = json.find(':', pos);
+    if (pos == std::string::npos) return -1;
+    try {
+        return std::stoi(json.substr(pos + 1));
+    } catch (...) {
+        return -1;
+    }
+}
+
 HOOK_METHOD(CommandGui, OnInit, () -> void)
 {
     LOG_HOOK("HOOK_METHOD -> CommandGui::OnInit -> Begin (AgentHook.cpp)\n")
@@ -106,6 +120,21 @@ HOOK_METHOD(CommandGui, OnLoop, () -> void)
             if (AgentSocket_Send(json)) {
                 lastEventText = this->choiceBox.mainText;
                 waitingForAction = true;
+            }
+        }
+
+        // Poll for a response and dispatch a click
+        if (waitingForAction) {
+            std::string action = AgentSocket_Recv();
+            if (!action.empty()) {
+                int idx = ParseChoiceIndex(action);
+                auto &boxes = this->choiceBox.choiceBoxes;
+                if (idx >= 0 && idx < (int)boxes.size()) {
+                    int cx = boxes[idx].x + boxes[idx].w / 2;
+                    int cy = boxes[idx].y + boxes[idx].h / 2;
+                    this->choiceBox.MouseClick(cx, cy);
+                }
+                waitingForAction = false;
             }
         }
     } else {
