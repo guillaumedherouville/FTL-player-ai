@@ -55,9 +55,64 @@ std::string AgentSocket_Recv()
     return line;
 }
 
+static std::string QuoteJson(const std::string &s)
+{
+    std::string out = "\"";
+    for (unsigned char c : s) {
+        if (c == '"')       out += "\\\"";
+        else if (c == '\\') out += "\\\\";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c < 0x20)  out += ' '; // drop other control chars
+        else                out += c;
+    }
+    out += "\"";
+    return out;
+}
+
+static std::string SerializeEvent(const ChoiceBox &box)
+{
+    std::string json = "{\"event\":{\"text\":";
+    json += QuoteJson(box.mainText);
+    json += ",\"choices\":[";
+    for (int i = 0; i < (int)box.choices.size(); i++) {
+        if (i > 0) json += ",";
+        json += "{\"index\":" + std::to_string(i) + ",\"text\":";
+        json += QuoteJson(box.choices[i].text);
+        json += "}";
+    }
+    json += "]}}";
+    return json;
+}
+
 HOOK_METHOD(CommandGui, OnInit, () -> void)
 {
     LOG_HOOK("HOOK_METHOD -> CommandGui::OnInit -> Begin (AgentHook.cpp)\n")
     super();
     AgentSocket_Init();
+}
+
+static std::string lastEventText;
+static bool waitingForAction = false;
+
+HOOK_METHOD(CommandGui, OnLoop, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD -> CommandGui::OnLoop -> Begin (AgentHook.cpp)\n")
+
+    // Send event to agent when a new choice box appears
+    if (this->choiceBox.bOpen && !this->choiceBox.choices.empty()) {
+        if (!waitingForAction && this->choiceBox.mainText != lastEventText) {
+            std::string json = SerializeEvent(this->choiceBox);
+            if (AgentSocket_Send(json)) {
+                lastEventText = this->choiceBox.mainText;
+                waitingForAction = true;
+            }
+        }
+    } else {
+        // Choice box closed — reset state
+        lastEventText.clear();
+        waitingForAction = false;
+    }
+
+    super();
 }
