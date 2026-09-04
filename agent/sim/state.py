@@ -82,8 +82,9 @@ class ShipState:
     weapons:            list[WeaponState]
     systems:            dict[int, SystemState]   # sys_id → SystemState
     missiles:           int
-    reactor_power:      int  = 8
-    is_automated:       bool = False
+    reactor_power:      int   = 8
+    is_automated:       bool  = False
+    fire_damage_acc:    float = 0.0  # accumulates until ≥ 1.0, then deals 1 hull
 
     def dodge_chance(self) -> float:
         """

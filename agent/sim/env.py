@@ -136,9 +136,17 @@ class FTLCombatEnv(gym.Env):
         _recharge_shields(self._state.player, self._dt)
         _recharge_shields(self._state.enemy,  self._dt)
 
-        # 7. Fire damage (stub — 0.1 hull/s per burning system)
-        _apply_fire(self._state.player, self._dt)
-        _apply_fire(self._state.enemy,  self._dt)
+        # 7. Fire damage — accumulates; only whole-point hits are logged
+        fire_dmg_player = _apply_fire(self._state.player, self._dt)
+        fire_dmg_enemy  = _apply_fire(self._state.enemy,  self._dt)
+        if fire_dmg_player:
+            impacts.append({"weapon": "fire", "target_id": 0,
+                            "hull_dealt": fire_dmg_player, "shields_drained": 0,
+                            "dodged": False, "fatal": self._state.player.hull <= 0})
+        if fire_dmg_enemy:
+            impacts.append({"weapon": "fire", "target_id": 1,
+                            "hull_dealt": fire_dmg_enemy, "shields_drained": 0,
+                            "dodged": False, "fatal": self._state.enemy.hull <= 0})
 
         # 8. Tick
         self._state.tick        += 1
@@ -386,10 +394,18 @@ def _recharge_shields(ship: ShipState, dt: float) -> None:
         ship.shield_charger = 0.0
 
 
-def _apply_fire(ship: ShipState, dt: float) -> None:
-    for sys in ship.systems.values():
-        if sys.on_fire:
-            ship.hull = max(0.0, ship.hull - FIRE_DMG_PER_SECOND * dt)
+def _apply_fire(ship: ShipState, dt: float) -> int:
+    """Accumulate fire damage; deal and return whole-point hull hits only."""
+    fires_burning = sum(1 for s in ship.systems.values() if s.on_fire)
+    if not fires_burning:
+        return 0
+    ship.fire_damage_acc += FIRE_DMG_PER_SECOND * fires_burning * dt
+    damage = int(ship.fire_damage_acc)
+    if damage >= 1:
+        ship.fire_damage_acc -= damage
+        ship.hull = max(0, ship.hull - damage)
+        return damage
+    return 0
 
 
 def _resolve_target(
