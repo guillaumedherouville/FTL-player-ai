@@ -5,7 +5,7 @@ import subprocess
 import time
 
 SOCKET_PATH = "/tmp/ftl_agent.sock"
-DECISION_DELAY = 5  # seconds before acting — gives you time to read and pause
+DECISION_DELAY = 15  # seconds before acting — read the event and pause FTL if you want to intervene
 
 
 def pick_choice(event: dict) -> int:
@@ -15,6 +15,21 @@ def pick_choice(event: dict) -> int:
     if not choices:
         return 0
 
+    # Print full event so you can read it in the terminal
+    print()
+    print("=" * 60)
+    print(f"EVENT: {text}")
+    print("CHOICES:")
+    for c in choices:
+        print(f"  {c['index']}: {c['text']}")
+    print("=" * 60)
+
+    # Visible countdown
+    for remaining in range(DECISION_DELAY, 0, -1):
+        print(f"\r[agent] Claude deciding in {remaining:2d}s... (pause FTL now if you want to take over)", end="", flush=True)
+        time.sleep(1)
+    print()
+
     choices_str = "\n".join(f"{c['index']}: {c['text']}" for c in choices)
     prompt = (
         "You are playing FTL: Faster Than Light. An event has occurred.\n\n"
@@ -23,15 +38,14 @@ def pick_choice(event: dict) -> int:
         "Reply with only the index number of your chosen option. No other text."
     )
 
-    print(f"[agent] Waiting {DECISION_DELAY}s before deciding...")
-    time.sleep(DECISION_DELAY)
-
     try:
         result = subprocess.run(
             ["claude", "-p", prompt],
             capture_output=True, text=True, timeout=30
         )
-        return int(result.stdout.strip())
+        raw = result.stdout.strip()
+        print(f"[agent] Claude chose: {raw} → {choices[int(raw)]['text']}")
+        return int(raw)
     except (ValueError, subprocess.TimeoutExpired, FileNotFoundError) as e:
         print(f"[agent] Claude call failed ({e}), defaulting to 0")
         return 0
@@ -71,10 +85,12 @@ def serve():
                     continue
 
                 event = state.get("event", {})
-                print(f"[agent] Event: {event.get('text', '')[:80]}")
                 idx = pick_choice(event)
-                print(f"[agent] Chose index {idx}")
-                conn.sendall(f'{{"index":{idx}}}\n'.encode())
+                try:
+                    conn.sendall(f'{{"index":{idx}}}\n'.encode())
+                except BrokenPipeError:
+                    print("[agent] FTL disconnected mid-decision")
+                    return
     finally:
         conn.close()
         server.close()
