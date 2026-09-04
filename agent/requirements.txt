@@ -1,1 +1,5 @@
 anthropic
+gymnasium
+numpy
+pytest
+pytest-cov
