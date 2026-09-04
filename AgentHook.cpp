@@ -115,7 +115,7 @@ HOOK_METHOD(CommandGui, OnLoop, () -> void)
 
     // Enable auto-fire whenever combat is active
     if (this->combatControl.open && !this->combatControl.weapControl.autoFiring) {
-        this->combatControl.weapControl.SetAutoFire(true);
+        this->combatControl.weapControl.SetAutofiring(true, false);
     }
 
     // Send event to agent when a new choice box appears
@@ -133,11 +133,9 @@ HOOK_METHOD(CommandGui, OnLoop, () -> void)
             std::string action = AgentSocket_Recv();
             if (!action.empty()) {
                 int idx = ParseChoiceIndex(action);
-                auto &boxes = this->choiceBox.choiceBoxes;
-                if (idx >= 0 && idx < (int)boxes.size()) {
-                    int cx = boxes[idx].x + boxes[idx].w / 2;
-                    int cy = boxes[idx].y + boxes[idx].h / 2;
-                    this->choiceBox.MouseClick(cx, cy);
+                if (idx >= 0 && idx < (int)this->choiceBox.choices.size()) {
+                    // SDLK_1 = 0x31, SDLK_2 = 0x32, etc.
+                    this->choiceBox.KeyDown((SDLKey)(0x31 + idx));
                 }
                 waitingForAction = false;
             }

@@ -2,40 +2,12 @@ import json
 import os
 import socket
 
-import anthropic
-
 SOCKET_PATH = "/tmp/ftl_agent.sock"
-MODEL = "claude-haiku-4-5-20251001"
-
-client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
 def pick_choice(event: dict) -> int:
-    text = event.get("text", "")
-    choices = event.get("choices", [])
-
-    if not choices:
-        return 0
-
-    choices_str = "\n".join(f"{c['index']}: {c['text']}" for c in choices)
-    prompt = (
-        "You are playing FTL: Faster Than Light. An event has occurred.\n\n"
-        f"Event:\n{text}\n\n"
-        f"Choices:\n{choices_str}\n\n"
-        "Reply with only the index number of your chosen option. No other text."
-    )
-
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=8,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    try:
-        return int(message.content[0].text.strip())
-    except (ValueError, IndexError, AttributeError):
-        print(f"[agent] Bad response from Claude, defaulting to 0")
-        return 0
+    # Always pick the first choice — just testing the hook plumbing for now
+    return 0
 
 
 def serve():
