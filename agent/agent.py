@@ -1,11 +1,13 @@
 import json
 import os
 import socket
-import subprocess
-import time
+
+import anthropic
 
 SOCKET_PATH = "/tmp/ftl_agent.sock"
-DECISION_DELAY = 5  # seconds before acting — gives you time to read and pause
+MODEL = "claude-haiku-4-5-20251001"
+
+client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
 
 def pick_choice(event: dict) -> int:
@@ -23,21 +25,21 @@ def pick_choice(event: dict) -> int:
         "Reply with only the index number of your chosen option. No other text."
     )
 
-    print(f"[agent] Waiting {DECISION_DELAY}s before deciding...")
-    time.sleep(DECISION_DELAY)
+    message = client.messages.create(
+        model=MODEL,
+        max_tokens=8,
+        messages=[{"role": "user", "content": prompt}],
+    )
 
     try:
-        result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True, text=True, timeout=30
-        )
-        return int(result.stdout.strip())
-    except (ValueError, subprocess.TimeoutExpired, FileNotFoundError) as e:
-        print(f"[agent] Claude call failed ({e}), defaulting to 0")
+        return int(message.content[0].text.strip())
+    except (ValueError, IndexError, AttributeError):
+        print(f"[agent] Bad response from Claude, defaulting to 0")
         return 0
 
 
 def serve():
+    # Remove stale socket file if present
     if os.path.exists(SOCKET_PATH):
         os.unlink(SOCKET_PATH)
 
