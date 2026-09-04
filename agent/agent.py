@@ -1,13 +1,11 @@
 import json
 import os
 import socket
-
-import anthropic
+import subprocess
+import time
 
 SOCKET_PATH = "/tmp/ftl_agent.sock"
-MODEL = "claude-haiku-4-5-20251001"
-
-client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+DECISION_DELAY = 15  # seconds before acting — read the event and pause FTL if you want to intervene
 
 
 def pick_choice(event: dict) -> int:
@@ -17,6 +15,21 @@ def pick_choice(event: dict) -> int:
     if not choices:
         return 0
 
+    # Print full event so you can read it in the terminal
+    print()
+    print("=" * 60)
+    print(f"EVENT: {text}")
+    print("CHOICES:")
+    for c in choices:
+        print(f"  {c['index']}: {c['text']}")
+    print("=" * 60)
+
+    # Visible countdown
+    for remaining in range(DECISION_DELAY, 0, -1):
+        print(f"\r[agent] Claude deciding in {remaining:2d}s... (pause FTL now if you want to take over)", end="", flush=True)
+        time.sleep(1)
+    print()
+
     choices_str = "\n".join(f"{c['index']}: {c['text']}" for c in choices)
     prompt = (
         "You are playing FTL: Faster Than Light. An event has occurred.\n\n"
@@ -25,21 +38,20 @@ def pick_choice(event: dict) -> int:
         "Reply with only the index number of your chosen option. No other text."
     )
 
-    message = client.messages.create(
-        model=MODEL,
-        max_tokens=8,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
     try:
-        return int(message.content[0].text.strip())
-    except (ValueError, IndexError, AttributeError):
-        print(f"[agent] Bad response from Claude, defaulting to 0")
+        result = subprocess.run(
+            ["claude", "-p", prompt],
+            capture_output=True, text=True, timeout=30
+        )
+        raw = result.stdout.strip()
+        print(f"[agent] Claude chose: {raw} → {choices[int(raw)]['text']}")
+        return int(raw)
+    except (ValueError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"[agent] Claude call failed ({e}), defaulting to 0")
         return 0
 
 
 def serve():
-    # Remove stale socket file if present
     if os.path.exists(SOCKET_PATH):
         os.unlink(SOCKET_PATH)
 
@@ -73,10 +85,12 @@ def serve():
                     continue
 
                 event = state.get("event", {})
-                print(f"[agent] Event: {event.get('text', '')[:80]}")
                 idx = pick_choice(event)
-                print(f"[agent] Chose index {idx}")
-                conn.sendall(f'{{"index":{idx}}}\n'.encode())
+                try:
+                    conn.sendall(f'{{"index":{idx}}}\n'.encode())
+                except BrokenPipeError:
+                    print("[agent] FTL disconnected mid-decision")
+                    return
     finally:
         conn.close()
         server.close()
