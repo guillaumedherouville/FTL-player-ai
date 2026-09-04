@@ -87,8 +87,16 @@ def _ship_block(ship: ShipState, label: str) -> list[str]:
 
 def render(state: CombatState, log: list[str]) -> str:
     sep = GRAY + "─" * 78 + R
-    lines = [
-        "",
+    lines = [""]
+
+    # Events first — cause before effect
+    if log:
+        lines.append(f"  {B}Events:{R}")
+        for entry in log:
+            lines.append(f"    {GRAY}{entry}{R}")
+        lines.append("")
+
+    lines += [
         f"  {B}FTL COMBAT{R}   tick {state.tick:04d}   t = {state.time_elapsed:6.2f}s",
         sep,
         *_ship_block(state.player, "PLAYER"),
@@ -100,6 +108,7 @@ def render(state: CombatState, log: list[str]) -> str:
     if state.projectiles_in_flight:
         lines.append(f"  {B}In flight:{R}")
         for p in state.projectiles_in_flight:
+            # target_id=0 → player ship is being targeted; target_id=1 → enemy ship
             who    = "PLAYER" if p.target_id == 0 else "ENEMY  "
             target = SYS_NAMES.get(p.target_system_id, f"sys{p.target_system_id}")
             lines.append(
@@ -107,11 +116,5 @@ def render(state: CombatState, log: list[str]) -> str:
                 f"  →  {who}  [{target:<8}]"
                 f"  {p.shots_remaining}× dmg   {GRAY}{p.travel_time:.2f}s{R}"
             )
-        lines.append(sep)
-
-    if log:
-        lines.append(f"  {B}Events:{R}")
-        for entry in log[-12:]:
-            lines.append(f"    {GRAY}{entry}{R}")
 
     return "\n".join(lines) + "\n"

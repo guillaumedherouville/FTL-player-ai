@@ -3,8 +3,8 @@
 Watch an FTL combat simulation play out in the terminal.
 
 Both sides are driven by the rule-based EnemyAI.
-Display updates once per game-second (16 ticks), not every tick.
-Events are weapon-impact-attributed, not hull-diff based.
+The display only updates when a notable event occurs (weapon impact, fire).
+The Events section shows exactly what happened since the last render — nothing older.
 
 Usage:
     python watch.py
@@ -25,9 +25,8 @@ from sim.ai import EnemyAI
 from sim.render import render, SYS_NAMES
 from sim.state import SYS_SHIELDS, SYS_ENGINES, SYS_WEAPONS
 
-_SYS_TO_ACT = {SYS_SHIELDS: 0, SYS_WEAPONS: 1, SYS_ENGINES: 2}
-
-TICKS_PER_FRAME = 16   # 1 game-second per display update
+_SYS_TO_ACT     = {SYS_SHIELDS: 0, SYS_WEAPONS: 1, SYS_ENGINES: 2}
+TICKS_PER_FRAME = 16   # 1 game-second per iteration
 
 
 def _build_action(env: FTLCombatEnv, ai: EnemyAI) -> dict:
@@ -44,9 +43,6 @@ def _build_action(env: FTLCombatEnv, ai: EnemyAI) -> dict:
 
 
 def _format_impact(imp: dict) -> list[str]:
-    """Return one log line per notable sub-event in an impact.
-    A single burst volley can drain a shield layer AND deal hull damage —
-    both must appear so the kill is never silently dropped."""
     target = "PLAYER" if imp["target_id"] == 0 else "ENEMY "
     weapon = imp["weapon"]
     if imp["dodged"]:
@@ -86,38 +82,41 @@ def main():
         return
 
     for attr, label in (("player", "player"), ("enemy", "enemy")):
-        name = getattr(args, attr)
-        if name not in SHIPS:
-            print(f"Unknown {label} ship '{name}'. Use --list-ships.")
+        if getattr(args, attr) not in SHIPS:
+            print(f"Unknown {label} ship '{getattr(args, attr)}'. Use --list-ships.")
             sys.exit(1)
 
     env = FTLCombatEnv(args.player, args.enemy, seed=args.seed)
     ai  = EnemyAI()
     env.reset()
 
-    log: list[str] = []
     frame_sleep = TICKS_PER_FRAME * env._dt / args.speed
+    known_fires: set = set()
 
-    # Track fires so we only log when a fire starts, not every tick
     def _active_fires(state):
         return {(0, sid) for sid, s in state.player.systems.items() if s.on_fire} | \
                {(1, sid) for sid, s in state.enemy.systems.items() if s.on_fire}
 
-    known_fires: set = set()
+    # Initial render so screen isn't blank while weapons charge
+    _clear()
+    sys.stdout.write(render(env._state, []))
+    sys.stdout.flush()
 
     while True:
         frame_impacts: list[dict] = []
+        frame_fires:   list[dict] = []
         terminated = truncated = False
         final_info: dict = {}
 
         for _ in range(TICKS_PER_FRAME):
             _, _, terminated, truncated, info = env.step(_build_action(env, ai))
             frame_impacts.extend(info.get("impacts", []))
+            frame_fires.extend(info.get("fires",   []))
             final_info = info
             if terminated or truncated:
                 break
 
-        # Collect all events for this frame
+        # Collect events that happened in this frame only
         frame_events: list[str] = []
 
         current_fires = _active_fires(env._state)
@@ -126,19 +125,22 @@ def main():
             frame_events.append(f"  {ship_name}  {SYS_NAMES.get(sys_id, 'sys')} caught FIRE 🔥")
         known_fires = current_fires
 
+        for f in frame_fires:
+            shooter = "PLAYER" if f["attacker_id"] == 0 else "ENEMY "
+            target  = "PLAYER" if f["target_id"]   == 0 else "ENEMY "
+            frame_events.append(
+                f"  {shooter}  fired {f['weapon']} → {target}  ({f['travel_time']}s travel)"
+            )
         for imp in frame_impacts:
             frame_events.extend(_format_impact(imp))
 
-        # Add as a timestamped group — only if something actually happened
-        if frame_events:
-            t = env._state.time_elapsed
-            log.append(f"\033[90m── t={t:.1f}s {'─'*30}\033[0m")
-            log.extend(frame_events)
-
-        # Render once for the whole frame
-        _clear()
-        sys.stdout.write(render(env._state, log))
-        sys.stdout.flush()
+        # Only redraw when something happened — or on the final frame
+        if frame_events or terminated or truncated:
+            t   = env._state.time_elapsed
+            log = [f"\033[90m── t={t:.1f}s {'─'*30}\033[0m"] + frame_events
+            _clear()
+            sys.stdout.write(render(env._state, log))
+            sys.stdout.flush()
 
         if terminated or truncated:
             winner = final_info.get("winner", "?")

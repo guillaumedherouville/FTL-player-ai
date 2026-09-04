@@ -119,10 +119,11 @@ class FTLCombatEnv(gym.Env):
         )
 
         # 3. Advance weapon cooldowns and fire ready weapons (both ships)
-        self._advance_weapons(self._state.player, self._state.enemy,
-                              list(action["weapon_targets"]))
-        self._advance_weapons(self._state.enemy, self._state.player,
-                              enemy_targets)
+        fires: list[dict] = []
+        fires += self._advance_weapons(self._state.player, self._state.enemy,
+                                       list(action["weapon_targets"]))
+        fires += self._advance_weapons(self._state.enemy, self._state.player,
+                                       enemy_targets)
 
         # 4. Decay ion timers
         _decay_ion(self._state.player, self._dt)
@@ -165,7 +166,7 @@ class FTLCombatEnv(gym.Env):
             reward,
             terminated,
             truncated,
-            {"winner": winner, "ticks": self._state.tick, "impacts": impacts},
+            {"winner": winner, "ticks": self._state.tick, "impacts": impacts, "fires": fires},
         )
 
     @classmethod
@@ -241,7 +242,8 @@ class FTLCombatEnv(gym.Env):
         attacker: ShipState,
         target:   ShipState,
         targets:  list[int],
-    ) -> None:
+    ) -> list[dict]:
+        fires = []
         for i, w in enumerate(attacker.weapons):
             if not w.powered:
                 continue
@@ -283,8 +285,14 @@ class FTLCombatEnv(gym.Env):
                 is_missile=(bp.weapon_type == WeaponType.MISSILE),
                 is_beam=(bp.weapon_type == WeaponType.BEAM),
             ))
-
+            fires.append({
+                "weapon":     w.blueprint_name,
+                "attacker_id": attacker.ship_id,
+                "target_id":   target.ship_id,
+                "travel_time": round(travel_time, 2),
+            })
             w.cooldown_current = 0.0   # reset for next volley
+        return fires
 
     def _advance_projectiles(self) -> list[dict]:
         still_flying = []
